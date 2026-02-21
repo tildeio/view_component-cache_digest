@@ -6,23 +6,35 @@ require_relative "resolver"
 module ViewComponent
   module CacheDigest
     class Railtie < Rails::Railtie
-      # Initialize before application config runs so users can
-      # do config.view_component.component_paths << "lib/components"
       config.view_component.component_paths = ["app/components"]
 
-      initializer "view_component_cache_digest.configure", after: "view_component.set_configs" do |app|
+      config.after_initialize do |app|
         next if ENV["DISABLE_VIEW_COMPONENT_CACHE_DIGEST"]
 
         CacheDigest.component_paths = app.config.view_component.component_paths
 
-        require "action_view/dependency_tracker"
-
-        ActionView::DependencyTracker::ERBTracker.prepend(
-          ViewComponent::CacheDigest::DependencyTracking
-        )
-
         ActiveSupport.on_load(:action_controller) do
           append_view_path(ViewComponent::CacheDigest::Resolver.new)
+        end
+
+        config.after_initialize do
+          require "action_view/dependency_tracker"
+
+          if defined?(ActionView::DependencyTracker::ERBTracker)
+            ActionView::DependencyTracker::ERBTracker.prepend(DependencyTracking::ERBTracker)
+          end
+
+          if defined?(ActionView::RenderParser::PrismRenderParser)
+            ActionView::RenderParser::PrismRenderParser.prepend(DependencyTracking::PrismRenderParser)
+          end
+          
+          if defined?(ActionView::RenderParser::RipperRenderParser)
+            ActionView::RenderParser::RipperRenderParser.prepend(DependencyTracking::RipperRenderParser)
+          end
+          
+          if defined?(ActionView::RenderParser) && ActionView::RenderParser.is_a?(Class)
+            ActionView::RenderParser.prepend(DependencyTracking::PrismRenderParser)
+          end
         end
       end
     end
