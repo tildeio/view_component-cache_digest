@@ -6,10 +6,6 @@ module ViewComponent
   module CacheDigest
     class TemplateError < StandardError; end
 
-    class << self
-      attr_accessor :component_paths
-    end
-
     class Resolver < ActionView::Resolver
       def _find_all(name, prefix, partial, details, key, locals)
         return [] unless prefix&.start_with?("components")

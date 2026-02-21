@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require_relative "dependency_tracking"
-require_relative "resolver"
-
 module ViewComponent
   module CacheDigest
     class Railtie < Rails::Railtie
@@ -11,14 +8,11 @@ module ViewComponent
       config.after_initialize do |app|
         next if ENV["DISABLE_VIEW_COMPONENT_CACHE_DIGEST"]
 
-        CacheDigest.component_paths = app.config.view_component.component_paths
-
-        ActiveSupport.on_load(:action_controller) do
-          append_view_path(ViewComponent::CacheDigest::Resolver.new)
-        end
+        component_paths = CacheDigest.component_paths = app.config.view_component.component_paths
 
         config.after_initialize do
           require "action_view/dependency_tracker"
+          require_relative "dependency_tracking"
 
           if defined?(ActionView::DependencyTracker::ERBTracker)
             ActionView::DependencyTracker::ERBTracker.prepend(DependencyTracking::ERBTracker)
@@ -34,6 +28,27 @@ module ViewComponent
           
           if defined?(ActionView::RenderParser) && ActionView::RenderParser.is_a?(Class)
             ActionView::RenderParser.prepend(DependencyTracking::PrismRenderParser)
+          end
+        end
+
+        ActiveSupport.on_load(:action_controller) do
+          require_relative "resolver"
+          append_view_path(ViewComponent::CacheDigest::Resolver.new)
+        end
+
+        if app.config.reloading_enabled?
+          require_relative "component_reloader"
+
+          component_reloader = ComponentReloader.new(
+            watcher: app.config.file_watcher,
+            paths: component_paths.map { |p| app.root.join(p).to_s },
+          )
+
+          app.reloaders << component_reloader
+
+          app.reloader.to_run do
+            require_unload_lock!
+            component_reloader.execute
           end
         end
       end
